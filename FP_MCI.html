@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FP - LAB MCI</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+            z-index: 10;
+        }
+        #controls-help {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 14px;
+        }
+        #light-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            width: 200px;
+        }
+        .control-group { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+    </style>
+    <!-- Load Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="info"><h3>FP - Laboratorium Manajemen Cerdas Informasi</h3></div>
+    
+    <div id="light-controls">
+        <h4>Kontrol Lampu</h4>
+        <div class="control-group">
+            <label for="west-light">Lampu Dinding Barat</label>
+            <input type="range" id="west-light" min="0" max="5" step="0.1" value="2.5">
+        </div>
+        <div class="control-group">
+            <label for="ambient-light">Cahaya Ruangan</label>
+            <input type="range" id="ambient-light" min="0" max="1" step="0.05" value="0.3">
+        </div>
+        <h4 style="margin-top: 15px; border-bottom: 1px solid #555; padding-bottom: 5px;">Kontrol TV</h4>
+        <div class="control-group">
+            <button id="btn-power" style="width: 100%; padding: 5px; background: #d32f2f; color: white; border: none; border-radius: 4px; cursor: pointer;">Power: OFF</button>
+        </div>
+        <div class="control-group">
+            <label for="tv-volume">Volume</label>
+            <input type="range" id="tv-volume" min="0" max="1" step="0.1" value="0.5">
+        </div>
+        <div class="control-group">
+            <label>Saluran (Channel)</label>
+            <div style="display: flex; gap: 5px;">
+                <button onclick="changeChannel(0)" style="flex: 1;">1</button>
+                <button onclick="changeChannel(1)" style="flex: 1;">2</button>
+                <button onclick="changeChannel(2)" style="flex: 1;">3</button>
+            </div>
+        </div>
+
+    </div><div id="controls-help">
+        Klik Kiri + Geser: Putar Kamera<br>
+        Klik Kanan + Geser: Geser Posisi (Pan)<br>
+        Scroll: Zoom
+    </div>
+
+    
+
+    <script>
+
+       // --- 0. TV SYSTEM SETUP (FIXED) ---
+        const videoElement = document.createElement('video');
+        videoElement.crossOrigin = "anonymous"; 
+        videoElement.loop = true;
+        videoElement.muted = false; 
+        videoElement.playsInline = true;
+        
+        // Sembunyikan elemen video tapi tempel ke body (PENTING agar browser merender tekstur)
+        videoElement.style.display = 'none';
+        document.body.appendChild(videoElement);
+
+        // DAFTAR VIDEO LOKAL
+        // Pastikan nama file di folder 'videos' sama persis (huruf besar/kecil berpengaruh!)
+        const channels = [
+            'videos/clip1.mp4', 
+            'videos/clip2.mp4', 
+            'videos/clip3.mp4'  
+        ];
+
+        // Set awal
+        videoElement.src = channels[0];
+        videoElement.load(); // PENTING: Reset load video
+
+        const videoTexture = new THREE.VideoTexture(videoElement);
+        videoTexture.minFilter = THREE.LinearFilter;
+        videoTexture.magFilter = THREE.LinearFilter;
+        videoTexture.format = THREE.RGBFormat;
+
+        // --- 1. Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xdddddd); // Langit luar
+        scene.fog = new THREE.Fog(0xdddddd, 10, 50);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2.5, 4); 
+        camera.lookAt(0, 1.5, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 1.5; 
+        controls.minDistance = 1;
+        controls.maxDistance = 20;
+
+        // --- 2. Materials & Textures ---
+        function createTileTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#DCC8B0'; ctx.fillRect(0, 0, 512, 512);
+            ctx.strokeStyle = '#402f1d'; ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, 512, 512);
+            for(let i=0; i<2000; i++) {
+                ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.05})`;
+                ctx.fillRect(Math.random()*512, Math.random()*512, 2, 2);
+            }
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(8, 6);
+            return texture;
+        }
+
+        // UPDATED: Bisa bikin light atau dark wood
+        function createWoodTexture(isLight = true) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // Warna dasar
+            ctx.fillStyle = isLight ? '#eebb88' : '#5c4033'; 
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Warna serat
+            const grainColor = isLight ? 'rgba(160, 100, 50, 0.1)' : 'rgba(30, 20, 10, 0.3)';
+            ctx.fillStyle = grainColor;
+            
+            // Serat kayu horizontal
+            for(let i=0; i<150; i++) {
+                const h = Math.random() * 512;
+                const thickness = Math.random() * 3;
+                ctx.fillRect(0, h, 512, thickness);
+            }
+            
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createExitTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 256, 128);
+            ctx.fillStyle = '#008800'; ctx.font = 'bold 80px Arial';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('EXIT', 128, 64);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const materials = {
+            floor: new THREE.MeshStandardMaterial({ 
+                map: createTileTexture(), 
+                roughness: 0.2, metalness: 0.1 
+            }),
+            wall: new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.9 }),
+            ceiling: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 }),
+            woodLight: new THREE.MeshStandardMaterial({ map: createWoodTexture(true), roughness: 0.6 }),
+            woodDark: new THREE.MeshStandardMaterial({ map: createWoodTexture(false), roughness: 0.7 }), 
+            blackPlastic: new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 }),
+            whitePlastic: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }),
+            greyVent: new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.7, metalness: 0.5 }),
+            blueFabric: new THREE.MeshStandardMaterial({ color: 0x1a4b8c, roughness: 1.0 }),
+            glass: new THREE.MeshPhysicalMaterial({ color: 0x88ccff, metalness: 0.1, roughness: 0, transparent: true, opacity: 0.2, transmission: 0.9, side: THREE.DoubleSide }),
+            whiteboard: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.1 }),
+            // UPDATED METAL: Lighter color for clearer Silver effect
+            metal: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.9, roughness: 0.2 }),
+            exitSign: new THREE.MeshBasicMaterial({ map: createExitTexture() })
+        };
+
+        // --- 3. Room Geometry ---
+        const roomWidth = 8; 
+        const roomDepth = 6; 
+        const roomHeight = 3.2;
+
+        const roomGroup = new THREE.Group();
+        scene.add(roomGroup);
+
+        // Floor & Ceiling
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), materials.floor);
+        floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; roomGroup.add(floor);
+        const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), materials.ceiling);
+        ceiling.rotation.x = Math.PI / 2; ceiling.position.y = roomHeight; roomGroup.add(ceiling);
+
+        // --- Helper Function: Pintu dengan Lubang Jendela (See-Through) ---
+        function createDoorObject(width, height, frameMat, leafMat, glassMat) {
+            const group = new THREE.Group();
+            const frameThick = 0.15;
+            const frameW = 0.1;
+            const leafThick = 0.05;
+
+            // --- 1. FRAME PINTU (Kusen) ---
+            // Frame Kiri
+            const fL = new THREE.Mesh(new THREE.BoxGeometry(frameW, height + 0.1, frameThick), frameMat);
+            fL.position.set(-(width/2 + frameW/2), (height+0.1)/2, 0);
+            group.add(fL);
+            
+            // Frame Kanan
+            const fR = new THREE.Mesh(new THREE.BoxGeometry(frameW, height + 0.1, frameThick), frameMat);
+            fR.position.set((width/2 + frameW/2), (height+0.1)/2, 0);
+            group.add(fR);
+            
+            // Frame Atas
+            const fT = new THREE.Mesh(new THREE.BoxGeometry(width + 2*frameW, frameW, frameThick), frameMat);
+            fT.position.set(0, height + frameW/2, 0);
+            group.add(fT);
+
+            // --- 2. DAUN PINTU (Leaf) ---
+            // Desain: Jendela vertikal di sebelah KIRI.
+            const winW = 0.35; // Lebar Jendela
+            const marginX = 0.2; // Jarak dari tepi kiri pintu
+            const marginY = 0.2; // Jarak dari atas/bawah
+            const winH = height - (2 * marginY); // Tinggi jendela (Upper to Lower)
+            
+            // Posisi X Pusat Jendela (Relatif terhadap pusat pintu 0,0)
+            const winX = -width/2 + marginX + winW/2;
+
+            // A. Panel Kanan Besar (Sisa pintu di kanan jendela)
+            const rightPanelW = width - (marginX + winW);
+            const rightPanelX = winX + winW/2 + rightPanelW/2;
+            const pRight = new THREE.Mesh(new THREE.BoxGeometry(rightPanelW, height, leafThick), leafMat);
+            pRight.position.set(rightPanelX, height/2, 0);
+            group.add(pRight);
+
+            // B. Panel Kiri (Pinggiran kiri jendela)
+            const leftPanelW = marginX;
+            const leftPanelX = -width/2 + leftPanelW/2;
+            const pLeft = new THREE.Mesh(new THREE.BoxGeometry(leftPanelW, height, leafThick), leafMat);
+            pLeft.position.set(leftPanelX, height/2, 0);
+            group.add(pLeft);
+
+            // C. Panel Atas (Di atas jendela)
+            const topPanelH = marginY;
+            const pTop = new THREE.Mesh(new THREE.BoxGeometry(winW, topPanelH, leafThick), leafMat);
+            pTop.position.set(winX, height - topPanelH/2, 0);
+            group.add(pTop);
+
+            // D. Panel Bawah (Di bawah jendela)
+            const botPanelH = marginY;
+            const pBot = new THREE.Mesh(new THREE.BoxGeometry(winW, botPanelH, leafThick), leafMat);
+            pBot.position.set(winX, botPanelH/2, 0);
+            group.add(pBot);
+
+            // --- 3. KACA JENDELA ---
+            const glass = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), glassMat);
+            glass.position.set(winX, height/2, 0);
+            group.add(glass);
+
+            // --- 4. HANDLE PINTU ---
+            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.12), materials.metal);
+            handle.rotation.z = Math.PI/2;
+            handle.position.set(width/2 - 0.15, 1.0, leafThick/2 + 0.06); 
+            group.add(handle);
+
+            return group;
+        }
+
+
+        // --- PENGATURAN DINDING (WALLS) ---
+        
+        // 1. DINDING BARAT (West Wall, X = -4)
+        const westWallGroup = new THREE.Group();
+        westWallGroup.position.set(-roomWidth/2, 0, 0); 
+        westWallGroup.rotation.y = Math.PI / 2; 
+        
+        const westWood = new THREE.Mesh(new THREE.BoxGeometry(roomDepth, roomHeight, 0.1), materials.woodLight);
+        westWood.position.set(0, roomHeight/2, 0);
+        westWallGroup.add(westWood);
+
+        const slatCount = 40; 
+        const slatSpacing = roomDepth / slatCount;
+        for(let i=0; i<slatCount; i++) {
+            const slat = new THREE.Mesh(new THREE.BoxGeometry(0.08, roomHeight, 0.05), materials.woodLight);
+            slat.position.set(-roomDepth/2 + i*slatSpacing + 0.1, roomHeight/2, 0.06);
+            westWallGroup.add(slat);
+        }
+
+        const wbWidth = 2.2; 
+        const wbHeight = 1.3;
+        const wb1 = new THREE.Mesh(new THREE.BoxGeometry(wbWidth, wbHeight, 0.02), materials.whiteboard);
+        wb1.position.set(-wbWidth/2 - 0.1, 1.9, 0.12); 
+        westWallGroup.add(wb1);
+        
+        const wb2 = new THREE.Mesh(new THREE.BoxGeometry(wbWidth, wbHeight, 0.02), materials.whiteboard);
+        wb2.position.set(wbWidth/2 + 0.1, 1.9, 0.12);
+        westWallGroup.add(wb2);
+
+        const consoleDepth = 0.5; 
+        const consoleHeight = 0.6; 
+        const consoleTable = new THREE.Mesh(new THREE.BoxGeometry(2.5, consoleHeight, consoleDepth), materials.woodDark);
+        consoleTable.position.set(0, consoleHeight/2, consoleDepth/2 + 0.1); 
+        consoleTable.receiveShadow = true; consoleTable.castShadow = true;
+        westWallGroup.add(consoleTable);
+
+        const tvGroup = new THREE.Group();
+        tvGroup.position.set(0, consoleHeight, consoleDepth/2 + 0.1); 
+        
+        const tvLeg1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.3), materials.blackPlastic);
+        tvLeg1.position.set(-0.6, 0.1, 0); tvGroup.add(tvLeg1);
+        const tvLeg2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.3), materials.blackPlastic);
+        tvLeg2.position.set(0.6, 0.1, 0); tvGroup.add(tvLeg2);
+        
+        const tvMesh = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 0.05), materials.blackPlastic);
+        tvMesh.position.set(0, 0.75, 0); 
+        tvGroup.add(tvMesh);
+        // const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.0), new THREE.MeshBasicMaterial({color: 0x111111}));
+        // Material saat TV Mati (Hitam)
+        const screenMatOff = new THREE.MeshBasicMaterial({ color: 0x050505 });
+        // Material saat TV Nyala (Video Texture)
+        const screenMatOn = new THREE.MeshBasicMaterial({ map: videoTexture });
+
+        const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.05), screenMatOff);
+        tvScreen.position.set(0.001, 0.75, 0.026);
+        // Agar orientasi video benar (kadang terbalik tergantung UV mapping)
+
+
+        // Jika video terbalik nanti, hapus rotation di atas.
+
+        tvGroup.add(tvScreen);
+        
+        westWallGroup.add(tvGroup);
+        roomGroup.add(westWallGroup);
+
+
+        // 2. DINDING TIMUR (East Wall, X = 4)
+        const eastWall = new THREE.Mesh(new THREE.BoxGeometry(roomDepth, roomHeight, 0.1), materials.wall);
+        eastWall.rotation.y = -Math.PI / 2;
+        eastWall.position.set(roomWidth/2, roomHeight/2, 0);
+        roomGroup.add(eastWall);
+
+
+        // 3. DINDING UTARA (North Wall, Z = -3)
+        const northWallGroup = new THREE.Group();
+        northWallGroup.position.set(0, 0, -roomDepth/2);
+
+        // --- PENGATURAN POSISI PINTU UTARA ---
+        const doorX = 1.5; // (Contoh digeser)
+        const doorWidth = 1.6;
+        const doorHeight = 2.15;
+        
+        const leftWallW = (doorX - doorWidth/2) - (-4.0);
+        if (leftWallW > 0) {
+            const nwLeft = new THREE.Mesh(new THREE.BoxGeometry(leftWallW, roomHeight, 0.1), materials.wall);
+            nwLeft.position.set(-4.0 + leftWallW/2, roomHeight/2, 0); 
+            northWallGroup.add(nwLeft);
+        }
+
+        const rightWallW = 4.0 - (doorX + doorWidth/2);
+        if (rightWallW > 0) {
+            const nwRight = new THREE.Mesh(new THREE.BoxGeometry(rightWallW, roomHeight, 0.1), materials.wall);
+            nwRight.position.set((doorX + doorWidth/2) + rightWallW/2, roomHeight/2, 0); 
+            northWallGroup.add(nwRight);
+        }
+
+        const nwTop = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, roomHeight - 2.25, 0.1), materials.wall);
+        nwTop.position.set(doorX, 2.25 + (roomHeight-2.25)/2, 0); 
+        northWallGroup.add(nwTop);
+
+        // --- OBJEK PINTU UTARA ---
+        // Frame Material: materials.metal (Silver)
+        const doorNorth = createDoorObject(1.4, doorHeight, materials.metal, materials.woodLight, materials.glass);
+        doorNorth.position.set(doorX, 0, 0);
+        northWallGroup.add(doorNorth);
+        
+        roomGroup.add(northWallGroup);
+
+
+        // 4. DINDING SELATAN (South Wall, Z = 3) - GRID + AC
+        const southWallGroup = new THREE.Group();
+        southWallGroup.position.set(0, 0, roomDepth/2);
+        
+        const winY = 2.3; 
+        const winHeight = 0.6;
+        const winWidth = 0.8;
+        const winGap = 0.15;
+        const winCount = 4;
+        const startX = -3.5; 
+
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.3, roomHeight, 0.6), materials.wall);
+        pillar.position.set(1.0, roomHeight/2, -0.25); 
+        southWallGroup.add(pillar);
+
+        const swRight = new THREE.Mesh(new THREE.BoxGeometry(0.725, roomHeight, 0.1), materials.wall);
+        swRight.position.set(3.6375, roomHeight/2, 0);
+        southWallGroup.add(swRight);
+        
+        const swAboveDoor = new THREE.Mesh(new THREE.BoxGeometry(1.2, roomHeight - 2.2, 0.1), materials.wall);
+        swAboveDoor.position.set(2.675, 2.2 + (roomHeight-2.2)/2, 0);
+        southWallGroup.add(swAboveDoor);
+
+        const swLeftOfDoor = new THREE.Mesh(new THREE.BoxGeometry(0.725, roomHeight, 0.1), materials.wall);
+        swLeftOfDoor.position.set(1.7125, roomHeight/2, 0);
+        southWallGroup.add(swLeftOfDoor);
+
+        const leftWallLimit = 0.35; 
+        const wallLeftStart = -4.0;
+        const totalLeftWidth = leftWallLimit - wallLeftStart; 
+        const wallLeftCenter = wallLeftStart + totalLeftWidth/2;
+
+        const bottomH = winY - winHeight/2;
+        const swBottom = new THREE.Mesh(new THREE.BoxGeometry(totalLeftWidth, bottomH, 0.1), materials.wall);
+        swBottom.position.set(wallLeftCenter, bottomH/2, 0);
+        southWallGroup.add(swBottom);
+
+        const topY = winY + winHeight/2;
+        const topH = roomHeight - topY;
+        const swTop = new THREE.Mesh(new THREE.BoxGeometry(totalLeftWidth, topH, 0.1), materials.wall);
+        swTop.position.set(wallLeftCenter, topY + topH/2, 0);
+        southWallGroup.add(swTop);
+
+        const edge1 = startX - winWidth/2;
+        const filler1W = edge1 - wallLeftStart;
+        if(filler1W > 0) {
+            const f1 = new THREE.Mesh(new THREE.BoxGeometry(filler1W, winHeight, 0.1), materials.wall);
+            f1.position.set(wallLeftStart + filler1W/2, winY, 0);
+            southWallGroup.add(f1);
+        }
+
+        for(let i=0; i<winCount-1; i++) {
+            const wRight = (startX + i*(winWidth+winGap)) + winWidth/2;
+            const nextWLeft = (startX + (i+1)*(winWidth+winGap)) - winWidth/2;
+            const gapW = nextWLeft - wRight;
+            const filler = new THREE.Mesh(new THREE.BoxGeometry(gapW, winHeight, 0.1), materials.wall);
+            filler.position.set(wRight + gapW/2, winY, 0);
+            southWallGroup.add(filler);
+        }
+
+        const lastWRight = (startX + (winCount-1)*(winWidth+winGap)) + winWidth/2;
+        const fillerLastW = leftWallLimit - lastWRight;
+        if(fillerLastW > 0) {
+            const fLast = new THREE.Mesh(new THREE.BoxGeometry(fillerLastW, winHeight, 0.1), materials.wall);
+            fLast.position.set(lastWRight + fillerLastW/2, winY, 0);
+            southWallGroup.add(fLast);
+        }
+
+        for(let i=0; i<winCount; i++) {
+            const xPos = startX + i * (winWidth + winGap);
+            const wGroup = new THREE.Group();
+            wGroup.position.set(xPos, winY, 0); 
+            
+            const glass = new THREE.Mesh(new THREE.PlaneGeometry(winWidth, winHeight), materials.glass);
+            wGroup.add(glass);
+            
+            const frameThickness = 0.05;
+            const frameGeoV = new THREE.BoxGeometry(frameThickness, winHeight, 0.08);
+            const frameGeoH = new THREE.BoxGeometry(winWidth, frameThickness, 0.08);
+            
+            const fL = new THREE.Mesh(frameGeoV, materials.greyVent); fL.position.x = -winWidth/2 + frameThickness/2; wGroup.add(fL);
+            const fR = new THREE.Mesh(frameGeoV, materials.greyVent); fR.position.x = winWidth/2 - frameThickness/2; wGroup.add(fR);
+            const fT = new THREE.Mesh(frameGeoH, materials.greyVent); fT.position.y = winHeight/2 - frameThickness/2; wGroup.add(fT);
+            const fB = new THREE.Mesh(frameGeoH, materials.greyVent); fB.position.y = -winHeight/2 + frameThickness/2; wGroup.add(fB);
+
+            const gridH = new THREE.Mesh(new THREE.BoxGeometry(winWidth, 0.02, 0.04), materials.greyVent);
+            wGroup.add(gridH);
+            
+            const gridV1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, winHeight, 0.04), materials.greyVent);
+            gridV1.position.x = -winWidth/6; wGroup.add(gridV1);
+            const gridV2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, winHeight, 0.04), materials.greyVent);
+            gridV2.position.x = winWidth/6; wGroup.add(gridV2);
+
+            southWallGroup.add(wGroup);
+        }
+
+        const acGroup = new THREE.Group();
+        acGroup.position.set(-3.0, 2.9, -0.15); 
+        acGroup.rotation.y = Math.PI;
+
+        const acBody = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.3, 0.25), materials.whitePlastic);
+        acGroup.add(acBody);
+        const acVent = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.26), materials.blackPlastic);
+        acVent.position.set(0, -0.08, 0); acGroup.add(acVent);
+        const acLight = new THREE.Mesh(new THREE.CircleGeometry(0.01, 8), new THREE.MeshBasicMaterial({color: 0x00ff00}));
+        acLight.position.set(0.4, 0, 0.13); acGroup.add(acLight);
+        southWallGroup.add(acGroup);
+
+
+        // --- 8. PINTU UTAMA (SELATAN) ---
+        const mainDoorGroup = new THREE.Group();
+        mainDoorGroup.position.set(2.675, 0, 0); 
+        
+        // Pintu Utama: Frame Material = materials.metal (Silver)
+        const mainDoorObj = createDoorObject(1.0, 2.1, materials.metal, materials.woodLight, materials.glass);
+        mainDoorGroup.add(mainDoorObj);
+
+        // Exit Sign
+        const exitSign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.05), new THREE.MeshBasicMaterial({color: 0xeeeeee}));
+        exitSign.position.set(0, 2.50, -0.1);
+        exitSign.rotation.y = -Math.PI;
+        const esFace = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.18), materials.exitSign);
+        esFace.position.set(0, 0, 0.03); exitSign.add(esFace);
+        mainDoorGroup.add(exitSign);
+
+        southWallGroup.add(mainDoorGroup);
+        roomGroup.add(southWallGroup);
+
+
+        // --- 4. PERABOTAN (Furniture) ---
+        const tableShiftX = -1.15;
+
+        const tableGroup = new THREE.Group();
+        const tLen = 4.5; 
+        const tWid = 2.0; 
+        const tH = 0.75;
+        
+        const shape = new THREE.Shape();
+        const r = 0.5;
+        const x = tLen/2 - r, y = tWid/2 - r;
+        shape.moveTo(-x, -tWid/2);
+        shape.lineTo(x, -tWid/2); shape.quadraticCurveTo(tLen/2, -tWid/2, tLen/2, -y);
+        shape.lineTo(tLen/2, y); shape.quadraticCurveTo(tLen/2, tWid/2, x, tWid/2);
+        shape.lineTo(-x, tWid/2); shape.quadraticCurveTo(-tLen/2, tWid/2, -tLen/2, y);
+        shape.lineTo(-tLen/2, -y); shape.quadraticCurveTo(-tLen/2, -tWid/2, -x, -tWid/2);
+        
+        const tGeo = new THREE.ExtrudeGeometry(shape, {steps: 1, depth: 0.05, bevelEnabled: false});
+        const confTableMat = new THREE.MeshStandardMaterial({ color: 0xf0d5b0, roughness: 0.5 });
+        
+        const tableTop = new THREE.Mesh(tGeo, confTableMat);
+        tableTop.rotation.x = Math.PI/2; 
+        tableTop.position.y = tH;
+        tableTop.castShadow = true;
+        tableGroup.add(tableTop);
+
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(tLen-0.5, 0.02, 0.3), materials.blackPlastic);
+        spine.position.y = tH + 0.051;
+        tableGroup.add(spine);
+
+        const legGeo = new THREE.CylinderGeometry(0.05, 0.05, tH, 16);
+        [-1.5, 0, 1.5].forEach(lx => {
+            const leg = new THREE.Mesh(legGeo, materials.metal);
+            leg.position.set(lx, tH/2, 0); tableGroup.add(leg);
+            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 1.2), materials.metal);
+            foot.position.set(lx, 0.025, 0); tableGroup.add(foot);
+        });
+
+        tableGroup.position.set(tableShiftX, 0, 0);
+        scene.add(tableGroup);
+
+        // KURSI
+        function createChair() {
+            const grp = new THREE.Group();
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.5), materials.blueFabric);
+            seat.position.y = 0.45; grp.add(seat);
+            const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), materials.blackPlastic);
+            back.position.set(0, 0.75, 0.25); grp.add(back); 
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05), materials.blackPlastic);
+            base.position.y = 0.05; grp.add(base);
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4), materials.blackPlastic);
+            stem.position.y = 0.25; grp.add(stem);
+            return grp;
+        }
+
+        const chairsPerSide = 4;
+        const cSpace = 0.9;
+        
+        for(let i=0; i<chairsPerSide; i++) {
+            const c = createChair();
+            c.position.set(tableShiftX + (-1.35 + i*cSpace), 0, -1.2);
+            c.rotation.y = Math.PI;
+            scene.add(c);
+        }
+
+        for(let i=0; i<chairsPerSide; i++) {
+            const c = createChair();
+            c.position.set(tableShiftX + (-1.35 + i*cSpace), 0, 1.2);
+            scene.add(c);
+        }
+
+        const cFoot = createChair();
+        cFoot.position.set(tableShiftX + 2.6, 0, 0);
+        cFoot.rotation.y = Math.PI/2;
+        scene.add(cFoot);
+
+        // --- 5. Lighting ---
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        // --- LINEAR LIGHT FOR WEST WALL ---
+        const linearLightGroup = new THREE.Group();
+        scene.add(linearLightGroup);
+
+        // 1. The Physical Light Bar (Visual)
+        const lightBarLen = 5.0; // Almost full length of wall (6.0)
+        const lightBarGeo = new THREE.BoxGeometry(0.1, 0.05, lightBarLen);
+        const lightBarMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+        const lightBar = new THREE.Mesh(lightBarGeo, lightBarMat);
+        // Position: Near West Wall (X=-4), High up (Y=3.0), Centered Z
+        lightBar.position.set(-3.8, 3.0, 0); 
+        linearLightGroup.add(lightBar);
+
+        // 2. The Light Sources (Simulating linear emission)
+        const numLights = 5; // Using 5 point lights to simulate a line source
+        const westLights = []; // Array to store lights for control slider
+        
+        for(let i=0; i<numLights; i++) {
+            // Distribute lights along the bar
+            // Z ranges from -lightBarLen/2 to lightBarLen/2
+            const zPos = -lightBarLen/2 + (i / (numLights-1)) * lightBarLen;
+            
+            const pl = new THREE.PointLight(0xffaa00, 0.5, 5); // Intensity divided roughly
+            pl.position.set(-3.8, 2.9, zPos); // Slightly below the bar
+            pl.castShadow = true;
+            
+            linearLightGroup.add(pl);
+            westLights.push(pl);
+        }
+
+        const overhead = new THREE.PointLight(0xffffff, 0.2, 10);
+        overhead.position.set(0, 3, 0);
+        scene.add(overhead);
+
+        // --- 6. Animation ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        animate();
+
+        // --- 7. Controls ---
+        const wSlider = document.getElementById('west-light');
+        const aSlider = document.getElementById('ambient-light');
+        
+        wSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            // Scale intensity for multiple lights (val represents total desired brightness feel)
+            // If max is 5, each light gets 5/5 = 1 at max.
+            const individualIntensity = val / numLights; 
+            westLights.forEach(l => l.intensity = individualIntensity);
+        });
+        aSlider.addEventListener('input', (e) => {
+            ambientLight.intensity = parseFloat(e.target.value);
+        });
+
+        // --- TV LOGIC CONTROLS ---
+
+        let isTvOn = false;
+        const btnPower = document.getElementById('btn-power');
+        const volSlider = document.getElementById('tv-volume');
+
+        // 1. Fungsi Power ON/OFF
+        btnPower.addEventListener('click', () => {
+            isTvOn = !isTvOn;
+            
+            if (isTvOn) {
+                // TV NYALA: Ganti material layar ke Video & Play
+                tvScreen.material = screenMatOn; 
+                videoElement.play();
+                
+                btnPower.innerText = "Power: ON";
+                btnPower.style.background = "#2e7d32"; // Hijau
+            } else {
+                // TV MATI: Ganti material layar ke Hitam & Pause
+                tvScreen.material = screenMatOff; 
+                videoElement.pause();
+                
+                btnPower.innerText = "Power: OFF";
+                btnPower.style.background = "#d32f2f"; // Merah
+            }
+        });
+
+        // 2. Fungsi Volume
+        volSlider.addEventListener('input', (e) => {
+            videoElement.volume = parseFloat(e.target.value);
+        });
+
+       // 3. Fungsi Ganti Channel (Fixed Logic)
+        window.changeChannel = function(index) {
+            if (index >= 0 && index < channels.length) {
+                // Simpan status apakah sedang nyala
+                const shouldPlay = isTvOn || !videoElement.paused;
+
+                // Ganti source
+                videoElement.src = channels[index];
+                
+                // Wajib .load() agar browser sadar source berubah
+                videoElement.load();
+
+                if (shouldPlay) {
+                    // Gunakan Promise untuk menghindari error "interrupted by pause"
+                    var playPromise = videoElement.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            console.log("Menunggu interaksi user untuk play video.");
+                        });
+                    }
+                }
+            }
+        };
+
+    </script>
+</body>
+</html>
