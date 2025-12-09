@@ -518,7 +518,7 @@
 
         // Exit Sign
         const exitSign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.05), new THREE.MeshBasicMaterial({color: 0xeeeeee}));
-        exitSign.position.set(0, 2.35, 0.1);
+        exitSign.position.set(0, 2.50, 0.1);
         const esFace = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.18), materials.exitSign);
         esFace.position.set(0, 0, 0.03); exitSign.add(esFace);
         mainDoorGroup.add(exitSign);
@@ -528,114 +528,146 @@
 
 
         // --- 4. PERABOTAN (Furniture) ---
-        // Shift table: moved right by 1.2 (twice the previous left shift of 0.6)
-        const tableShiftX = -1.2; // shift table to the right
+        const tableShiftX = -1.2; // Shift table further to the left
 
         const tableGroup = new THREE.Group();
-        // D-shape table: flat (straight) side on the left, rounded bulge on the right
-        // make table slightly smaller
-        const tLen = 2.4; // overall width (flat-to-farthest bulge)
-        const tWid = 1.3; // overall height
+        const tLen = 4.2; // Longer table length
+        const tWid = 2.0; 
         const tH = 0.75;
-
+        
         const shape = new THREE.Shape();
-        const halfW = tLen / 2;
-        const halfH = tWid / 2;
+        const halfLen = tLen / 2;
+        const halfWid = tWid / 2;
+        const radius = halfWid; // Semicircle radius = half width
 
-        // Build half-oval: flat bottom + semicircular top
-        const width = tLen; // full width
-        const halfWidth = width / 2;
-        // rectangle (flat) height = 0.7 * width (proportional to your reference image)
-        const rectH = 0.7 * width;
-        const r = halfWidth; // semicircle radius
-        const arcSegments = 96;
-
-        // Start at bottom-left
-        shape.moveTo(-halfWidth, 0);
-        // flat bottom to bottom-right
-        shape.lineTo(halfWidth, 0);
-        // up right side to rectangle top
-        shape.lineTo(halfWidth, rectH);
-
-        // semicircle centered at (0, rectH + r) from right to left
-        const cx = 0;
-        const cy = rectH + r;
-        for (let i = 0; i <= arcSegments; i++) {
-            const angle = 0 + Math.PI * (i / arcSegments); // 0 -> PI
-            const x = cx + r * Math.cos(angle);
-            const y = cy + r * Math.sin(angle);
+        // Start at bottom-left curve center
+        // Bottom straight section
+        shape.moveTo(-halfLen + radius, -halfWid);
+        shape.lineTo(halfLen - radius, -halfWid);
+        
+        // Right semicircle (bulge outward)
+        const rightCenterX = halfLen - radius;
+        for (let i = 0; i <= 48; i++) {
+            const angle = -Math.PI / 2 + Math.PI * (i / 48); // -PI/2 to PI/2
+            const x = rightCenterX + radius * Math.cos(angle);
+            const y = radius * Math.sin(angle);
             shape.lineTo(x, y);
         }
-
-        // down left side to bottom-left
-        shape.lineTo(-halfWidth, rectH);
-        shape.lineTo(-halfWidth, 0);
-
-        const tGeo = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: 0.05, bevelEnabled: false });
+        
+        // Top straight section
+        shape.lineTo(-halfLen + radius, halfWid);
+        
+        // Left semicircle (bulge outward)
+        const leftCenterX = -halfLen + radius;
+        for (let i = 0; i <= 48; i++) {
+            const angle = Math.PI / 2 + Math.PI * (i / 48); // PI/2 to 3PI/2
+            const x = leftCenterX + radius * Math.cos(angle);
+            const y = radius * Math.sin(angle);
+            shape.lineTo(x, y);
+        }
+        
+        const tGeo = new THREE.ExtrudeGeometry(shape, {steps: 1, depth: 0.05, bevelEnabled: false});
         const confTableMat = new THREE.MeshStandardMaterial({ color: 0xf0d5b0, roughness: 0.5 });
         
         const tableTop = new THREE.Mesh(tGeo, confTableMat);
-        tableTop.rotation.x = Math.PI/2;
-        tableTop.rotation.z = Math.PI/2; 
+        tableTop.rotation.x = Math.PI/2; 
         tableTop.position.y = tH;
-        tableTop.position.x = -tLen/2 + 2.1;
         tableTop.castShadow = true;
         tableGroup.add(tableTop);
 
-        const spine = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.2, tLen - 0.5), 0.02, 0.3), materials.blackPlastic);
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(tLen - 1.2, 0.02, 0.3), materials.blackPlastic);
         spine.position.y = tH + 0.051;
-        spine.position.x = -1.05; // Shift spine to the left
+        spine.position.z = 0;
         tableGroup.add(spine);
 
+        // Add white power outlet centered on the spine (plate stands upright against the spine)
+        (function(){
+            const outletGroup = new THREE.Group();
+
+            // Outlet body (thin white plate)
+            const outletBody = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.02), materials.whitePlastic);
+            outletBody.position.set(0, 0, 0);
+            outletGroup.add(outletBody);
+
+            // Three socket discs (black) arranged in a horizontal line
+            const holeMat = materials.blackPlastic;
+            const spacing = 0.04; // horizontal spacing between holes
+
+            const hole1 = new THREE.Mesh(new THREE.CircleGeometry(0.015, 16), holeMat);
+            hole1.position.set(-spacing, 0, 0.011);
+            outletGroup.add(hole1);
+
+            const hole2 = new THREE.Mesh(new THREE.CircleGeometry(0.015, 16), holeMat);
+            hole2.position.set(0, 0, 0.011);
+            outletGroup.add(hole2);
+
+            const hole3 = new THREE.Mesh(new THREE.CircleGeometry(0.015, 16), holeMat);
+            hole3.position.set(spacing, 0, 0.011);
+            outletGroup.add(hole3);
+
+            // Orient upright and flip so it faces outward from the spine
+            outletGroup.rotation.x = Math.PI / 2;   // stand up
+            outletGroup.rotation.y = Math.PI;       // flipped 180deg around Y axis
+            outletGroup.rotation.z = 0;             // ensure no Z flip
+            outletGroup.position.set(0, tH + 0.051 + 0.02, 0.16); // placed on spine side
+
+            tableGroup.add(outletGroup);
+        })();
+
+        // --- TABLE LEGS: defined below (legGeo + legs + feet) ---
         const legGeo = new THREE.CylinderGeometry(0.05, 0.05, tH, 16);
-        // distribute legs along length proportionally
-        const legPositions = [-tLen * 0.33, 0, tLen * 0.33];
-        legPositions.forEach(lx => {
+        [-1.2, 0, 1.2].forEach(lx => {
             const leg = new THREE.Mesh(legGeo, materials.metal);
-            leg.position.set(lx, tH/2, 0); tableGroup.add(leg);
-            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.5), materials.metal);
-            foot.position.set(lx - 1.05, 0.025, 0); tableGroup.add(foot);
+            leg.position.set(lx, tH/2, 0); 
+            tableGroup.add(leg);
+            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 1.2), materials.metal);
+            foot.position.set(lx, 0.025, 0); 
+            tableGroup.add(foot);
         });
 
         tableGroup.position.set(tableShiftX, 0, 0);
-        // Rotate the whole table 180 degrees around Y so the flat side faces the opposite direction
-        tableGroup.rotation.y = Math.PI;
-        tableGroup.position.x += -1.3; // move right by 1.2
         scene.add(tableGroup);
 
         // KURSI
         function createChair() {
             const grp = new THREE.Group();
-            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.5), materials.blueFabric);
+            
+            // 50/50 chance for black color scheme
+            const isBlack = Math.random() < 0.5;
+            const seatColor = isBlack ? materials.blackPlastic : materials.blueFabric;
+            const backColor = isBlack ? materials.blackPlastic : materials.blackPlastic;
+            const baseColor = isBlack ? materials.blackPlastic : materials.blackPlastic;
+            
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.5), seatColor);
             seat.position.y = 0.45; grp.add(seat);
-            const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), materials.blackPlastic);
+            const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), backColor);
             back.position.set(0, 0.75, 0.25); grp.add(back); 
-            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05), materials.blackPlastic);
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05), baseColor);
             base.position.y = 0.05; grp.add(base);
-            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4), materials.blackPlastic);
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4), baseColor);
             stem.position.y = 0.25; grp.add(stem);
             return grp;
         }
 
-        const chairsPerSide = 3;
+        const chairsPerSide = 4;
         const cSpace = 0.9;
-        const chairShiftX = -1.0; // Shift all chairs to the left
+        const chairShiftX = -0.6;
         
         for(let i=0; i<chairsPerSide; i++) {
             const c = createChair();
-            c.position.set(chairShiftX + (-1.35 + i*cSpace), 0, -1.2);
+            c.position.set(chairShiftX + (-1.75 + i*cSpace), 0, -1.2);
             c.rotation.y = Math.PI;
             scene.add(c);
         }
 
         for(let i=0; i<chairsPerSide; i++) {
             const c = createChair();
-            c.position.set(chairShiftX + (-1.35 + i*cSpace), 0, 1.2);
+            c.position.set(chairShiftX + (-1.75 + i*cSpace), 0, 1.2);
             scene.add(c);
         }
 
         const cFoot = createChair();
-        cFoot.position.set(chairShiftX + 1.6, 0, 0);
+        cFoot.position.set(chairShiftX + 1.85, 0, 0);
         cFoot.rotation.y = Math.PI/2;
         scene.add(cFoot);
 
