@@ -50,9 +50,9 @@
     <div id="info"><h3>FP - Laboratorium Manajemen Cerdas Informasi</h3></div>
     
     <div id="light-controls">
-        <h4>Kontrol Lampu</h4>
+        <h4 style="margin-top: 0; border-bottom: 1px solid #555; padding-bottom: 5px;">Kontrol Lampu</h4>
         <div class="control-group">
-            <label for="west-light">Lampu Dinding Barat</label>
+            <label for="west-light">Lampu Dinding Barat (Linear)</label>
             <input type="range" id="west-light" min="0" max="5" step="0.1" value="2.5">
         </div>
         <div class="control-group">
@@ -75,18 +75,16 @@
                 <button onclick="changeChannel(2)" style="flex: 1;">3</button>
             </div>
         </div>
+    </div>
 
-    </div><div id="controls-help">
+    <div id="controls-help">
         Klik Kiri + Geser: Putar Kamera<br>
         Klik Kanan + Geser: Geser Posisi (Pan)<br>
         Scroll: Zoom
     </div>
 
-    
-
     <script>
-
-       // --- 0. TV SYSTEM SETUP (FIXED) ---
+        // --- 0. TV SYSTEM SETUP (FIXED) ---
         const videoElement = document.createElement('video');
         videoElement.crossOrigin = "anonymous"; 
         videoElement.loop = true;
@@ -142,7 +140,7 @@
             canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#DCC8B0'; ctx.fillRect(0, 0, 512, 512);
-            ctx.strokeStyle = '#402f1d'; ctx.lineWidth = 4;
+            ctx.strokeStyle = '#cbbfae'; ctx.lineWidth = 4;
             ctx.strokeRect(0, 0, 512, 512);
             for(let i=0; i<2000; i++) {
                 ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.05})`;
@@ -318,12 +316,13 @@
 
         const wbWidth = 2.2; 
         const wbHeight = 1.3;
+        const wbGap = 0.02; // 0.1 unit gap between whiteboards
         const wb1 = new THREE.Mesh(new THREE.BoxGeometry(wbWidth, wbHeight, 0.02), materials.whiteboard);
-        wb1.position.set(-wbWidth/2 - 0.1, 1.9, 0.12); 
+        wb1.position.set(-wbWidth/2 - wbGap/2, 1.9, 0.12); 
         westWallGroup.add(wb1);
         
         const wb2 = new THREE.Mesh(new THREE.BoxGeometry(wbWidth, wbHeight, 0.02), materials.whiteboard);
-        wb2.position.set(wbWidth/2 + 0.1, 1.9, 0.12);
+        wb2.position.set(wbWidth/2 + wbGap/2, 1.9, 0.12);
         westWallGroup.add(wb2);
 
         const consoleDepth = 0.5; 
@@ -344,7 +343,6 @@
         const tvMesh = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 0.05), materials.blackPlastic);
         tvMesh.position.set(0, 0.75, 0); 
         tvGroup.add(tvMesh);
-        // const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.0), new THREE.MeshBasicMaterial({color: 0x111111}));
         // Material saat TV Mati (Hitam)
         const screenMatOff = new THREE.MeshBasicMaterial({ color: 0x050505 });
         // Material saat TV Nyala (Video Texture)
@@ -352,11 +350,6 @@
 
         const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.05), screenMatOff);
         tvScreen.position.set(0.001, 0.75, 0.026);
-        // Agar orientasi video benar (kadang terbalik tergantung UV mapping)
-
-
-        // Jika video terbalik nanti, hapus rotation di atas.
-
         tvGroup.add(tvScreen);
         
         westWallGroup.add(tvGroup);
@@ -525,8 +518,7 @@
 
         // Exit Sign
         const exitSign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.05), new THREE.MeshBasicMaterial({color: 0xeeeeee}));
-        exitSign.position.set(0, 2.50, -0.1);
-        exitSign.rotation.y = -Math.PI;
+        exitSign.position.set(0, 2.35, 0.1);
         const esFace = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.18), materials.exitSign);
         esFace.position.set(0, 0, 0.03); exitSign.add(esFace);
         mainDoorGroup.add(exitSign);
@@ -536,44 +528,79 @@
 
 
         // --- 4. PERABOTAN (Furniture) ---
-        const tableShiftX = -1.15;
+        // Shift table: moved right by 1.2 (twice the previous left shift of 0.6)
+        const tableShiftX = -1.2; // shift table to the right
 
         const tableGroup = new THREE.Group();
-        const tLen = 4.5; 
-        const tWid = 2.0; 
+        // D-shape table: flat (straight) side on the left, rounded bulge on the right
+        // make table slightly smaller
+        const tLen = 2.4; // overall width (flat-to-farthest bulge)
+        const tWid = 1.3; // overall height
         const tH = 0.75;
-        
+
         const shape = new THREE.Shape();
-        const r = 0.5;
-        const x = tLen/2 - r, y = tWid/2 - r;
-        shape.moveTo(-x, -tWid/2);
-        shape.lineTo(x, -tWid/2); shape.quadraticCurveTo(tLen/2, -tWid/2, tLen/2, -y);
-        shape.lineTo(tLen/2, y); shape.quadraticCurveTo(tLen/2, tWid/2, x, tWid/2);
-        shape.lineTo(-x, tWid/2); shape.quadraticCurveTo(-tLen/2, tWid/2, -tLen/2, y);
-        shape.lineTo(-tLen/2, -y); shape.quadraticCurveTo(-tLen/2, -tWid/2, -x, -tWid/2);
-        
-        const tGeo = new THREE.ExtrudeGeometry(shape, {steps: 1, depth: 0.05, bevelEnabled: false});
+        const halfW = tLen / 2;
+        const halfH = tWid / 2;
+
+        // Build half-oval: flat bottom + semicircular top
+        const width = tLen; // full width
+        const halfWidth = width / 2;
+        // rectangle (flat) height = 0.7 * width (proportional to your reference image)
+        const rectH = 0.7 * width;
+        const r = halfWidth; // semicircle radius
+        const arcSegments = 96;
+
+        // Start at bottom-left
+        shape.moveTo(-halfWidth, 0);
+        // flat bottom to bottom-right
+        shape.lineTo(halfWidth, 0);
+        // up right side to rectangle top
+        shape.lineTo(halfWidth, rectH);
+
+        // semicircle centered at (0, rectH + r) from right to left
+        const cx = 0;
+        const cy = rectH + r;
+        for (let i = 0; i <= arcSegments; i++) {
+            const angle = 0 + Math.PI * (i / arcSegments); // 0 -> PI
+            const x = cx + r * Math.cos(angle);
+            const y = cy + r * Math.sin(angle);
+            shape.lineTo(x, y);
+        }
+
+        // down left side to bottom-left
+        shape.lineTo(-halfWidth, rectH);
+        shape.lineTo(-halfWidth, 0);
+
+        const tGeo = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: 0.05, bevelEnabled: false });
         const confTableMat = new THREE.MeshStandardMaterial({ color: 0xf0d5b0, roughness: 0.5 });
         
         const tableTop = new THREE.Mesh(tGeo, confTableMat);
-        tableTop.rotation.x = Math.PI/2; 
+        tableTop.rotation.x = Math.PI/2;
+        tableTop.rotation.z = Math.PI/2; 
         tableTop.position.y = tH;
+        tableTop.position.x = -tLen/2 + 2.1;
         tableTop.castShadow = true;
         tableGroup.add(tableTop);
 
-        const spine = new THREE.Mesh(new THREE.BoxGeometry(tLen-0.5, 0.02, 0.3), materials.blackPlastic);
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.2, tLen - 0.5), 0.02, 0.3), materials.blackPlastic);
         spine.position.y = tH + 0.051;
+        spine.position.x = -1.05; // Shift spine to the left
         tableGroup.add(spine);
 
         const legGeo = new THREE.CylinderGeometry(0.05, 0.05, tH, 16);
-        [-1.5, 0, 1.5].forEach(lx => {
+        // distribute legs along length proportionally
+        const legPositions = [-tLen * 0.33, 0, tLen * 0.33];
+        legPositions.forEach(lx => {
             const leg = new THREE.Mesh(legGeo, materials.metal);
             leg.position.set(lx, tH/2, 0); tableGroup.add(leg);
-            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 1.2), materials.metal);
-            foot.position.set(lx, 0.025, 0); tableGroup.add(foot);
+            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.5), materials.metal);
+            foot.position.set(lx - 1.05, 0.025, 0); tableGroup.add(foot);
         });
 
         tableGroup.position.set(tableShiftX, 0, 0);
+        // Rotate the whole table 180 degrees around Y so the flat side faces the opposite direction
+        tableGroup.rotation.y = Math.PI;
+        tableGroup.position.x += -1.3; // move right by 1.2
         scene.add(tableGroup);
 
         // KURSI
@@ -590,24 +617,25 @@
             return grp;
         }
 
-        const chairsPerSide = 4;
+        const chairsPerSide = 3;
         const cSpace = 0.9;
+        const chairShiftX = -1.0; // Shift all chairs to the left
         
         for(let i=0; i<chairsPerSide; i++) {
             const c = createChair();
-            c.position.set(tableShiftX + (-1.35 + i*cSpace), 0, -1.2);
+            c.position.set(chairShiftX + (-1.35 + i*cSpace), 0, -1.2);
             c.rotation.y = Math.PI;
             scene.add(c);
         }
 
         for(let i=0; i<chairsPerSide; i++) {
             const c = createChair();
-            c.position.set(tableShiftX + (-1.35 + i*cSpace), 0, 1.2);
+            c.position.set(chairShiftX + (-1.35 + i*cSpace), 0, 1.2);
             scene.add(c);
         }
 
         const cFoot = createChair();
-        cFoot.position.set(tableShiftX + 2.6, 0, 0);
+        cFoot.position.set(chairShiftX + 1.6, 0, 0);
         cFoot.rotation.y = Math.PI/2;
         scene.add(cFoot);
 
@@ -653,8 +681,6 @@
         // --- 6. Animation ---
         function animate() {
             requestAnimationFrame(animate);
-
-            
             controls.update();
             renderer.render(scene, camera);
         }
