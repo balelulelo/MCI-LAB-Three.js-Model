@@ -42,22 +42,27 @@
         input[type="range"] { width: 100%; cursor: pointer; }
     </style>
     <!-- Load Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script> -->
     <!-- Load OrbitControls -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script> -->
 </head>
 <body>
     <div id="info"><h3>FP - Laboratorium Manajemen Cerdas Informasi</h3></div>
     
     <div id="light-controls">
-        <h4 style="margin-top: 0; border-bottom: 1px solid #555; padding-bottom: 5px;">Kontrol Lampu</h4>
+        <h4>Kontrol Lampu</h4>
         <div class="control-group">
-            <label for="west-light">Lampu Dinding Barat (Linear)</label>
+            <label for="west-light">Lampu Dinding Barat</label>
             <input type="range" id="west-light" min="0" max="5" step="0.1" value="2.5">
         </div>
         <div class="control-group">
             <label for="ambient-light">Cahaya Ruangan</label>
             <input type="range" id="ambient-light" min="0" max="1" step="0.05" value="0.3">
+        </div>
+        <h4 style="margin-top: 20px; border-bottom: 1px solid #555; padding-bottom: 5px;">Efek Visual</h4>
+        <div class="control-group">
+            <label for="bloom-strength">Kekuatan Glow (Bloom)</label>
+            <input type="range" id="bloom-strength" min="0" max="3" step="0.1" value="0.8">
         </div>
         <h4 style="margin-top: 15px; border-bottom: 1px solid #555; padding-bottom: 5px;">Kontrol TV</h4>
         <div class="control-group">
@@ -75,16 +80,29 @@
                 <button onclick="changeChannel(2)" style="flex: 1;">3</button>
             </div>
         </div>
-    </div>
 
-    <div id="controls-help">
+    </div><div id="controls-help">
         Klik Kiri + Geser: Putar Kamera<br>
         Klik Kanan + Geser: Geser Posisi (Pan)<br>
         Scroll: Zoom
     </div>
 
-    <script>
-        // --- 0. TV SYSTEM SETUP (FIXED) ---
+    <script type="module">
+    // Library Utama
+        import * as THREE from 'https://cdn.skypack.dev/three@0.128.0';
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+        import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/loaders/GLTFLoader.js'; // Jaga-jaga kalau mau load model nanti
+
+    // Post-Processing 
+        import { EffectComposer } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+        import { SSAOPass } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/SSAOPass.js';
+
+    // Physics
+        import * as CANNON from 'https://cdn.skypack.dev/cannon-es';
+
+       // --- 0. TV SYSTEM SETUP (FIXED) ---
         const videoElement = document.createElement('video');
         videoElement.crossOrigin = "anonymous"; 
         videoElement.loop = true;
@@ -96,7 +114,6 @@
         document.body.appendChild(videoElement);
 
         // DAFTAR VIDEO LOKAL
-        // Pastikan nama file di folder 'videos' sama persis (huruf besar/kecil berpengaruh!)
         const channels = [
             'videos/clip1.mp4', 
             'videos/clip2.mp4', 
@@ -125,14 +142,41 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(renderer.domElement);
+        
+        // --- [TAMBAHAN BARU: REALISTIC TONE MAPPING] ---
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        // -----------------------------------------------
 
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        document.body.appendChild(renderer.domElement);
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.maxPolarAngle = Math.PI / 1.5; 
-        controls.minDistance = 1;
-        controls.maxDistance = 20;
+
+        // --- [TAMBAHAN BARU: SETUP POST-PROCESSING] ---
+        const composer = new EffectComposer(renderer);
+        
+        // 1. Render Scene Biasa
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        // 2. SSAO Pass (Bayangan Sudut Realistis)
+        const ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+        ssaoPass.kernelRadius = 16; // Sebaran bayangan
+        ssaoPass.minDistance = 0.005;
+        ssaoPass.maxDistance = 0.1;
+        composer.addPass(ssaoPass);
+
+        // 3. Bloom Pass (Efek Cahaya Berpendar/Glow)
+        // Parameter: Resolution, Strength, Radius, Threshold
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.4; // Hanya benda terang > 0.2 yang akan glow
+        bloomPass.strength = 0.8;  // Kekuatan glow
+        bloomPass.radius = 0.5;
+        composer.addPass(bloomPass);
+        // ----------------------------------------------
 
         // --- 2. Materials & Textures ---
         function createTileTexture() {
@@ -140,7 +184,7 @@
             canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#DCC8B0'; ctx.fillRect(0, 0, 512, 512);
-            ctx.strokeStyle = '#cbbfae'; ctx.lineWidth = 4;
+            ctx.strokeStyle = '#402f1d'; ctx.lineWidth = 4;
             ctx.strokeRect(0, 0, 512, 512);
             for(let i=0; i<2000; i++) {
                 ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.05})`;
@@ -149,6 +193,7 @@
             const texture = new THREE.CanvasTexture(canvas);
             texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
             texture.repeat.set(8, 6);
+            texture.encoding = THREE.sRGBEncoding;
             return texture;
         }
 
@@ -316,13 +361,12 @@
 
         const wbWidth = 2.2; 
         const wbHeight = 1.3;
-        const wbGap = 0.02; // 0.1 unit gap between whiteboards
         const wb1 = new THREE.Mesh(new THREE.BoxGeometry(wbWidth, wbHeight, 0.02), materials.whiteboard);
-        wb1.position.set(-wbWidth/2 - wbGap/2, 1.9, 0.12); 
+        wb1.position.set(-wbWidth/2 - 0.1, 1.9, 0.12); 
         westWallGroup.add(wb1);
         
         const wb2 = new THREE.Mesh(new THREE.BoxGeometry(wbWidth, wbHeight, 0.02), materials.whiteboard);
-        wb2.position.set(wbWidth/2 + wbGap/2, 1.9, 0.12);
+        wb2.position.set(wbWidth/2 + 0.1, 1.9, 0.12);
         westWallGroup.add(wb2);
 
         const consoleDepth = 0.5; 
@@ -343,6 +387,7 @@
         const tvMesh = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 0.05), materials.blackPlastic);
         tvMesh.position.set(0, 0.75, 0); 
         tvGroup.add(tvMesh);
+        // const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.0), new THREE.MeshBasicMaterial({color: 0x111111}));
         // Material saat TV Mati (Hitam)
         const screenMatOff = new THREE.MeshBasicMaterial({ color: 0x050505 });
         // Material saat TV Nyala (Video Texture)
@@ -350,6 +395,11 @@
 
         const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.05), screenMatOff);
         tvScreen.position.set(0.001, 0.75, 0.026);
+        // Agar orientasi video benar (kadang terbalik tergantung UV mapping)
+
+
+        // Jika video terbalik nanti, hapus rotation di atas.
+
         tvGroup.add(tvScreen);
         
         westWallGroup.add(tvGroup);
@@ -518,14 +568,14 @@
 
         // Exit Sign
         const exitSign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.05), new THREE.MeshBasicMaterial({color: 0xeeeeee}));
-        exitSign.position.set(0, 2.50, 0.1);
+        exitSign.position.set(0, 2.50, -0.1);
+        exitSign.rotation.y = -Math.PI;
         const esFace = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.18), materials.exitSign);
         esFace.position.set(0, 0, 0.03); exitSign.add(esFace);
         mainDoorGroup.add(exitSign);
 
         southWallGroup.add(mainDoorGroup);
         roomGroup.add(southWallGroup);
-
 
         // --- 4. PERABOTAN (Furniture) ---
         const tableShiftX = -1.2; // Shift table further to the left
@@ -673,7 +723,7 @@
 
         // --- 5. Lighting ---
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
         scene.add(ambientLight);
 
         // --- LINEAR LIGHT FOR WEST WALL ---
@@ -686,7 +736,7 @@
         const lightBarMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
         const lightBar = new THREE.Mesh(lightBarGeo, lightBarMat);
         // Position: Near West Wall (X=-4), High up (Y=3.0), Centered Z
-        lightBar.position.set(-3.8, 3.0, 0); 
+        lightBar.position.set(-3.8, 3.22, 0); 
         linearLightGroup.add(lightBar);
 
         // 2. The Light Sources (Simulating linear emission)
@@ -713,19 +763,23 @@
         // --- 6. Animation ---
         function animate() {
             requestAnimationFrame(animate);
+
             controls.update();
-            renderer.render(scene, camera);
+            // renderer.render(scene, camera);
+            composer.render();
         }
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
         });
         animate();
 
-        // --- 7. Controls ---
+        // --- 7. Controls & logic ---
         const wSlider = document.getElementById('west-light');
         const aSlider = document.getElementById('ambient-light');
+        const bSlider = document.getElementById('bloom-strength');
         
         wSlider.addEventListener('input', (e) => {
             const val = parseFloat(e.target.value);
@@ -736,6 +790,10 @@
         });
         aSlider.addEventListener('input', (e) => {
             ambientLight.intensity = parseFloat(e.target.value);
+        });
+
+        bSlider.addEventListener('input', (e) => {
+            bloomPass.strength = parseFloat(e.target.value);
         });
 
         // --- TV LOGIC CONTROLS ---
