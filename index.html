@@ -41,6 +41,14 @@
         label { display: block; margin-bottom: 5px; font-size: 14px; }
         input[type="range"] { width: 100%; cursor: pointer; }
     </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js",
+            "three/": "https://cdn.jsdelivr.net/npm/three@0.128.0/"
+        }
+    }
+</script>
     <!-- Load Three.js from CDN -->
     <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script> -->
     <!-- Load OrbitControls -->
@@ -88,19 +96,14 @@
     </div>
 
     <script type="module">
-    // Library Utama
-        import * as THREE from 'https://cdn.skypack.dev/three@0.128.0';
-        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/OrbitControls.js';
-        import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/loaders/GLTFLoader.js'; // Jaga-jaga kalau mau load model nanti
-
-    // Post-Processing 
-        import { EffectComposer } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/RenderPass.js';
-        import { UnrealBloomPass } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/UnrealBloomPass.js';
-        import { SSAOPass } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/postprocessing/SSAOPass.js';
-
-    // Physics
-        import * as CANNON from 'https://cdn.skypack.dev/cannon-es';
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+        import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+        import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+        import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 
        // --- 0. TV SYSTEM SETUP (FIXED) ---
         const videoElement = document.createElement('video');
